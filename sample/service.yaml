@@ -1,0 +1,17 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elk-kafka-headless
+  namespace: logging
+  labels:
+    app: elk-kafka
+    team: devops
+spec:
+  ports:
+  - port: 9092
+    name: server
+  clusterIP: None
+  selector:
+    app: elk-kafka
+

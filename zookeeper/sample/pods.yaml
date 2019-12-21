@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elk-zk 
+  namespace: logging
+  labels:
+    app: elk-zk 
+spec:
+  serviceName: elk-zk-headless
+  replicas: 3
+  revisionHistoryLimit: 30
+  updateStrategy:
+    type: RollingUpdate
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      app: elk-zk 
+  template:
+    metadata:
+      labels:
+        app: elk-zk 
+        version: 3.4.10
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values: 
+                - elk-zk
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - name: zookeeper
+        image: devops/zookeeper:3.4.14
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 2181
+        - containerPort: 2888
+        - containerPort: 3888
+        env:
+        - name: ZK_ENSEMBLE
+          value: "elk-zk-0.elk-zk-headless.logging.svc.cluster.local;elk-zk-1.elk-zk-headless.logging.svc.cluster.local;elk-zk-2.elk-zk-headless.logging.svc.cluster.local"
+        - name: ZK_HEAP_SIZE
+          value: "2G"
+        - name: ZK_MAX_CLIENT_CNXNS
+          value: "2000"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          limits:
+            cpu: 2000m
+            memory: 3000Mi
+          requests:
+            cpu: 500m
+            memory: 1024Mi
+        livenessProbe:
+          exec:
+            command:
+            - /home/appuser/zookeeper/bin/zkServer.sh
+            - status
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+        volumeMounts:
+        - mountPath: "/home/appuser/zookeeper/data"
+          name: data
+      initContainers:
+      - name: init-chown
+        image: busybox:1.28
+        command: ['sh', '-c', 'chown 1000:1000 /data -R']
+        volumeMounts:
+        - name: data
+          mountPath: /data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+      labels:
+        app: elk-zk
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10G

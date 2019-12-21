@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elk-kafka
+  namespace: logging
+  labels:
+    app: elk-kafka
+spec:
+  serviceName: elk-kafka-headless
+  replicas: 3
+  revisionHistoryLimit: 10
+  updateStrategy:
+    type: RollingUpdate
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      app: elk-kafka
+  template:
+    metadata:
+      labels:
+        app: elk-kafka
+        version: 2.3.1
+      annotations:
+        prometheus.io/port: "7071"
+        prometheus.io/scrape: "true"
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values: 
+                - elk-kafka
+            topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 120
+      containers:
+      - name: kafka
+        image: devops/kafka:2.3.1
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 9092
+        - containerPort: 1095
+        - containerPort: 5556
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: KAFKA_HEAP_OPTS
+          value: "-Xms4096M -Xmx4096M"
+        - name: ZOOKEEPER_CONNECT
+          value: "elk-zk-0.elk-zk-headless.logging.svc.cluster.local:2181,elk-zk-1.elk-zk-headless.logging.svc.cluster.local:2181,elk-zk-2.elk-zk-headless.logging.svc.cluster.local:2181"
+        lifecycle:
+          preStop:
+            exec:
+              command: ["pkill","-15","java"]
+        resources:
+          limits:
+            cpu: 4000m
+            memory: 6000Mi
+          requests:
+            cpu: 2000m
+            memory: 4000Mi
+        volumeMounts:
+        - mountPath: /home/appuser/kafka/kafka-logs
+          name: data
+      initContainers:
+      - name: init-chown
+        image: busybox:1.28
+        command: ['sh', '-c', 'chown 1000:1000 /data -R && rm -rf /data/lost+found']
+        volumeMounts:
+        - name: data
+          mountPath: /data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+      labels:
+        app: elk-kafka
+        team: devops
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1000G
